@@ -1,0 +1,6 @@
+Apuntes de comandos de ejecución 
+
+
+flutter run -d chrome
+flutter run -d macos
+flutter run -d android
