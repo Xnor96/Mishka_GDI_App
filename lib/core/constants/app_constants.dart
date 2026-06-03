@@ -1,6 +1,11 @@
 class AppConstants {
   // ── API ──────────────────────────────────────────────────────────
-  static const String baseUrl = 'http://localhost:8080';
+  // Inyectable en build/run con: --dart-define=API_BASE_URL=http://IP:PUERTO
+  // Si no se pasa, usa localhost (sirve para emulador iOS / escritorio).
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:8080',
+  );
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 15);
 
