@@ -26,6 +26,31 @@ class _ControlDiarioScreenState extends ConsumerState<ControlDiarioScreen> {
     });
   }
 
+  // ── Confirmar eliminación (desde tabla escritorio) ────────────────────────
+  Future<void> _confirmarEliminar(BuildContext context, ControlDiario c) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Eliminar movimiento'),
+        content: Text(
+            '¿Eliminar el movimiento "${c.descripcion}" '
+            'del ${_dateFmt.format(c.fecha)}?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, true),
+              child: const Text('Eliminar',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await ref.read(controlDiarioProvider.notifier).eliminar(c.id);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(controlDiarioProvider);
@@ -187,7 +212,7 @@ class _ControlDiarioScreenState extends ConsumerState<ControlDiarioScreen> {
       color: AppColors.colControl,
       onRefresh: () => ref.read(controlDiarioProvider.notifier).cargar(),
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
         itemCount: lista.length,
         separatorBuilder: (_, __) => const SizedBox(height: 4),
         itemBuilder: (_, i) =>
@@ -203,7 +228,7 @@ class _ControlDiarioScreenState extends ConsumerState<ControlDiarioScreen> {
   // ── Tabla escritorio ──────────────────────────────────────────────────────
   Widget _buildTabla(List<ControlDiario> lista) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
       child: Card(
         child: DataTable(
           headingRowColor:
@@ -217,6 +242,7 @@ class _ControlDiarioScreenState extends ConsumerState<ControlDiarioScreen> {
             DataColumn(label: Text('Balance',     style: TextStyle(fontWeight: FontWeight.w700))),
             DataColumn(label: Text('Verbena',     style: TextStyle(fontWeight: FontWeight.w700))),
             DataColumn(label: Text('Usuario',     style: TextStyle(fontWeight: FontWeight.w700))),
+            DataColumn(label: Text('',            style: TextStyle(fontWeight: FontWeight.w700))),
           ],
           rows: lista.map((c) {
             final bal = c.balance;
@@ -248,6 +274,12 @@ class _ControlDiarioScreenState extends ConsumerState<ControlDiarioScreen> {
               DataCell(Text(c.usuarioRegistro,
                   style: const TextStyle(
                       fontSize: 12, color: AppColors.textSecondary))),
+              DataCell(IconButton(
+                tooltip: 'Eliminar movimiento',
+                icon: const Icon(Icons.delete_outline,
+                    size: 20, color: AppColors.stockCero),
+                onPressed: () => _confirmarEliminar(context, c),
+              )),
             ]);
           }).toList(),
         ),

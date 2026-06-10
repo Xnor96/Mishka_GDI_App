@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/constants/app_constants.dart';
 import '../models/dashboard_models.dart';
 import '../providers/dashboard_provider.dart';
 
@@ -17,20 +15,13 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   final _currency = NumberFormat.currency(locale: 'es_MX', symbol: '\$');
-  String _username = '';
 
   @override
   void initState() {
     super.initState();
-    _loadUser();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dashboardProvider.notifier).cargar();
     });
-  }
-
-  Future<void> _loadUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) setState(() => _username = prefs.getString(AppConstants.keyUsername) ?? 'Usuario');
   }
 
   @override
@@ -72,13 +63,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildGreeting(),
             // Banner de alerta crítica si hay productos sin stock
-            if (state.alertas.any((a) => a.stockActual == 0)) ...[
-              const SizedBox(height: 16),
+            if (state.alertas.any((a) => a.stockActual == 0))
               _buildAlertaBanner(state.alertas),
-            ],
-            const SizedBox(height: 20),
             _buildResumenCards(state),
             const SizedBox(height: 24),
             _buildAlertasSection(state.alertas),
@@ -90,24 +77,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  // ── Saludo ────────────────────────────────────────────────────────
-  Widget _buildGreeting() {
-    final hora   = DateTime.now().hour;
-    final saludo = hora < 12 ? 'Buenos días'
-                 : hora < 19 ? 'Buenas tardes'
-                             : 'Buenas noches';
-    final fecha = DateFormat("EEEE d 'de' MMMM, yyyy", 'es_MX').format(DateTime.now());
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('$saludo, $_username 👋',
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-        const SizedBox(height: 4),
-        Text(fecha, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-      ],
     );
   }
 

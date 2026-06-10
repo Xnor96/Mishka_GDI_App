@@ -29,46 +29,60 @@ class AppNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SizedBox(height: 40),
-        // ── Logo ─────────────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Image.asset(
-              'assets/images/mishka.jpeg',
-              height: 52,
-              fit: BoxFit.contain,
-              alignment: Alignment.centerLeft,
+    // LayoutBuilder + IntrinsicHeight: el sidebar conserva el Spacer normal
+    // cuando hay espacio suficiente, y se vuelve scrolleable cuando no
+    // (por ejemplo, al abrir el teclado en Resumen Mensual).
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 40),
+                  // ── Logo ─────────────────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.asset(
+                        'assets/images/mishka.jpeg',
+                        height: 52,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.centerLeft,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Usuario
+                  Text(
+                    username,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                  const SizedBox(height: 28),
+                  // ── Items ────────────────────────────────────────────
+                  ..._items.map((item) => _buildTile(context, item)),
+                  const Spacer(),
+                  // ── Logout ───────────────────────────────────────────
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.white38, size: 20),
+                    title: const Text(
+                      'Cerrar sesión',
+                      style: TextStyle(color: Colors.white38, fontSize: 13),
+                    ),
+                    onTap: onLogout,
+                    dense: true,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        // Usuario
-        Text(
-          username,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white54, fontSize: 11),
-        ),
-        const SizedBox(height: 28),
-        // ── Items ────────────────────────────────────────────────────
-        ..._items.map((item) => _buildTile(context, item)),
-        const Spacer(),
-        // ── Logout ───────────────────────────────────────────────────
-        ListTile(
-          leading: const Icon(Icons.logout, color: Colors.white38, size: 20),
-          title: const Text(
-            'Cerrar sesión',
-            style: TextStyle(color: Colors.white38, fontSize: 13),
-          ),
-          onTap: onLogout,
-          dense: true,
-        ),
-        const SizedBox(height: 16),
-      ],
+        );
+      },
     );
   }
 

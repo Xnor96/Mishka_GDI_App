@@ -38,6 +38,31 @@ class _EntradasScreenState extends ConsumerState<EntradasScreen> {
   // ── Resetear página cuando cambian los filtros ────────────────────
   void _resetPage() => setState(() => _page = 0);
 
+  // ── Confirmar anulación (desde tabla escritorio) ──────────────────
+  Future<void> _confirmarAnular(BuildContext context, Entrada e) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Anular entrada'),
+        content: Text(
+            '¿Anular la entrada de "${e.nombreProducto}"?\n'
+            'El stock del producto se revertirá automáticamente.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, true),
+              child: const Text('Anular',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await ref.read(entradasProvider.notifier).eliminar(e.id);
+    }
+  }
+
   // ── Lista filtrada (antes de paginar) ─────────────────────────────
   List<Entrada> _filtradas(List<Entrada> todas) {
     return todas.where((e) {
@@ -280,7 +305,7 @@ class _EntradasScreenState extends ConsumerState<EntradasScreen> {
       color: AppColors.colEntradas,
       onRefresh: () => ref.read(entradasProvider.notifier).cargar(),
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
         itemCount: entradas.length,
         separatorBuilder: (_, __) => const SizedBox(height: 4),
         itemBuilder: (_, i) => _EntradaCard(
@@ -295,7 +320,7 @@ class _EntradasScreenState extends ConsumerState<EntradasScreen> {
   // ── Tabla escritorio ──────────────────────────────────────────────
   Widget _buildTabla(List<Entrada> entradas) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
       child: Card(
         child: DataTable(
           headingRowColor:
@@ -308,6 +333,7 @@ class _EntradasScreenState extends ConsumerState<EntradasScreen> {
             DataColumn(label: Text('Cant.',      style: TextStyle(fontWeight: FontWeight.w700))),
             DataColumn(label: Text('Precio c/u', style: TextStyle(fontWeight: FontWeight.w700))),
             DataColumn(label: Text('Usuario',    style: TextStyle(fontWeight: FontWeight.w700))),
+            DataColumn(label: Text('',           style: TextStyle(fontWeight: FontWeight.w700))),
           ],
           rows: entradas.map((e) => DataRow(cells: [
             DataCell(Text(_dateFmt.format(e.fechaEntrada),
@@ -346,6 +372,12 @@ class _EntradasScreenState extends ConsumerState<EntradasScreen> {
             DataCell(Text(e.usuarioRegistro,
                 style: const TextStyle(
                     fontSize: 12, color: AppColors.textSecondary))),
+            DataCell(IconButton(
+              tooltip: 'Anular entrada',
+              icon: const Icon(Icons.delete_outline,
+                  size: 20, color: AppColors.stockCero),
+              onPressed: () => _confirmarAnular(context, e),
+            )),
           ])).toList(),
         ),
       ),

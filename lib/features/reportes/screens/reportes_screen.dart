@@ -257,7 +257,7 @@ class _TabInventario extends ConsumerWidget {
 
   Widget _listaInventario(List<ReporteInventarioItem> items) {
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
       itemCount: items.length,
       separatorBuilder: (_, __) => const SizedBox(height: 4),
       itemBuilder: (_, i) {
@@ -304,7 +304,7 @@ class _TabInventario extends ConsumerWidget {
 
   Widget _tablaInventario(List<ReporteInventarioItem> items) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
       child: Card(
         child: DataTable(
           headingRowColor: WidgetStateProperty.all(
@@ -493,7 +493,7 @@ class _TabMovimientos extends ConsumerWidget {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
       itemCount: state.movimientos.length,
       separatorBuilder: (_, __) => const SizedBox(height: 4),
       itemBuilder: (_, i) {
@@ -569,7 +569,7 @@ class _TabVendidos extends ConsumerWidget {
       color: AppColors.colReportes,
       onRefresh: () => ref.read(reportesProvider.notifier).cargarMasVendidos(),
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 80),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 110),
         itemCount: state.masVendidos.length + 1, // +1 for header row
         separatorBuilder: (_, __) => const SizedBox(height: 4),
         itemBuilder: (_, i) {
@@ -726,7 +726,7 @@ class _TabValoracion extends ConsumerWidget {
       color: AppColors.colReportes,
       onRefresh: () => ref.read(reportesProvider.notifier).cargarValoracion(),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 80),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 110),
         children: [
           // Resumen total + CSV
           Container(

@@ -34,7 +34,11 @@ class _SalidaFormScreenState extends ConsumerState<SalidaFormScreen> {
 
   DateTime _fecha   = DateTime.now();
   String _username  = '';
-  String _lugarVenta = 'ALL BAZAR';
+  // _lugarVenta ya no es dropdown: ahora es texto libre con autocomplete.
+  // El default real se setea en initState() leyendo el último lugar usado.
+  final _lugarCtrl  = TextEditingController();
+  // Sugerencias = base + lugares que el admin ya tipeó antes
+  List<String> _lugaresSugeridos = [];
   String _tipoPago   = 'EFECTIVO';
 
   // Total calculado en tiempo real
@@ -45,15 +49,40 @@ class _SalidaFormScreenState extends ConsumerState<SalidaFormScreen> {
     return (cant * precio - desc).clamp(0, double.infinity);
   }
 
-  static const _lugares = ['ALL BAZAR', 'PINKSTORE', 'PERSONAL', 'OTRO'];
-  static const _pagos   = ['EFECTIVO', 'TRANSFERENCIA', 'CLIP', 'OTRO'];
+  static const _lugaresBase = ['ALL BAZAR', 'PINKSTORE', 'PERSONAL', 'OTRO'];
+  static const _pagos       = ['EFECTIVO', 'TRANSFERENCIA', 'CLIP', 'OTRO'];
 
   @override
   void initState() {
     super.initState();
     SharedPreferences.getInstance().then((p) {
       if (mounted) {
-        setState(() => _username = p.getString(AppConstants.keyUsername) ?? '');
+        final custom = p.getStringList(AppConstants.keyLugaresCustom) ?? [];
+        // Prioridad para precargar el lugar:
+        //   1. Filtro activo de "Lugar" en la pantalla de Ventas
+        //   2. Último lugar usado en una venta anterior
+        //   3. Primer lugar base (ALL BAZAR)
+        final filtro = p.getString(AppConstants.keyFiltroLugar);
+        final ultimoLugar = filtro
+            ?? p.getString(AppConstants.keyUltimoLugar)
+            ?? _lugaresBase.first;
+        final ultimoPago  = p.getString(AppConstants.keyUltimoPago)
+            ?? _pagos.first;
+        setState(() {
+          _username = p.getString(AppConstants.keyUsername) ?? '';
+          _lugarCtrl.text = ultimoLugar;
+          _tipoPago = _pagos.contains(ultimoPago) ? ultimoPago : _pagos.first;
+          // Combinar base + custom sin duplicados, preservando orden base primero
+          _lugaresSugeridos = [
+            ..._lugaresBase,
+            ...custom.where((l) => !_lugaresBase.contains(l)),
+          ];
+          // Si el lugar precargado no está en sugeridos (por ej. era un custom
+          // que el admin borró), agregarlo para que el dropdown lo muestre
+          if (!_lugaresSugeridos.contains(ultimoLugar)) {
+            _lugaresSugeridos = [..._lugaresSugeridos, ultimoLugar];
+          }
+        });
       }
     });
     // Recalcular total al cambiar campos
@@ -69,7 +98,61 @@ class _SalidaFormScreenState extends ConsumerState<SalidaFormScreen> {
     _descCtrl.dispose();
     _obsCtrl.dispose();
     _searchCtrl.dispose();
+    _lugarCtrl.dispose();
     super.dispose();
+  }
+
+  // ── Persistir lugar nuevo si no existía ─────────────────────────────────
+  Future<void> _persistirLugarSiEsNuevo(String lugar) async {
+    final l = lugar.trim();
+    if (l.isEmpty || _lugaresSugeridos.contains(l)) return;
+    final p = await SharedPreferences.getInstance();
+    final custom = p.getStringList(AppConstants.keyLugaresCustom) ?? [];
+    if (!custom.contains(l)) {
+      custom.add(l);
+      await p.setStringList(AppConstants.keyLugaresCustom, custom);
+    }
+  }
+
+  // ── Diálogo "Agregar lugar nuevo" ───────────────────────────────────────
+  Future<void> _agregarLugarNuevo() async {
+    final ctrl = TextEditingController();
+    final nuevo = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Nuevo lugar de venta'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.characters,
+          decoration: const InputDecoration(
+            labelText: 'Nombre del lugar',
+            hintText: 'Ej. VERBENA, TIANGUIS, etc.',
+          ),
+          onSubmitted: (v) =>
+              Navigator.pop(dialogCtx, v.trim().toUpperCase()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () =>
+                Navigator.pop(dialogCtx, ctrl.text.trim().toUpperCase()),
+            child: const Text('Agregar'),
+          ),
+        ],
+      ),
+    );
+    if (nuevo == null || nuevo.isEmpty) return;
+    await _persistirLugarSiEsNuevo(nuevo);
+    if (!mounted) return;
+    setState(() {
+      if (!_lugaresSugeridos.contains(nuevo)) {
+        _lugaresSugeridos = [..._lugaresSugeridos, nuevo];
+      }
+      _lugarCtrl.text = nuevo;
+    });
   }
 
   // ── Buscar producto ───────────────────────────────────────────────────────
@@ -126,17 +209,25 @@ class _SalidaFormScreenState extends ConsumerState<SalidaFormScreen> {
       return;
     }
 
+    final lugar = _lugarCtrl.text.trim().toUpperCase();
     final body = {
       'id_producto':      _seleccionado!.id,
       'fecha_salida':     _fecha.toIso8601String().split('T').first,
       'cantidad':         int.parse(_cantCtrl.text),
       'precio_venta':     double.tryParse(_precioCtrl.text) ?? 0.0,
       'descuento':        double.tryParse(_descCtrl.text)   ?? 0.0,
-      'lugar_venta':      _lugarVenta,
+      'lugar_venta':      lugar,
       'tipo_pago':        _tipoPago,
       'observaciones':    _obsCtrl.text.trim(),
       'usuario_registro': _username,
     };
+
+    // Si el admin escribió un lugar nuevo, recordarlo para próximas ventas
+    await _persistirLugarSiEsNuevo(lugar);
+    // Recordar el último lugar y tipo de pago usados → próxima venta los precarga
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(AppConstants.keyUltimoLugar, lugar);
+    await prefs.setString(AppConstants.keyUltimoPago,  _tipoPago);
 
     final ok = await ref.read(salidasProvider.notifier).registrar(body);
 
@@ -291,17 +382,47 @@ class _SalidaFormScreenState extends ConsumerState<SalidaFormScreen> {
                     icon: Icons.store_outlined,
                     color: AppColors.colControl,
                     children: [
-                      // Lugar de venta
+                      // Lugar de venta — Dropdown con todos los conocidos
+                      // (base + custom) + opción "Agregar lugar nuevo…"
                       DropdownButtonFormField<String>(
-                        value: _lugarVenta,
+                        value: _lugaresSugeridos.contains(_lugarCtrl.text)
+                            ? _lugarCtrl.text
+                            : null,
+                        isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Lugar de venta',
                           prefixIcon: Icon(Icons.location_on_outlined),
                         ),
-                        items: _lugares
-                            .map((l) => DropdownMenuItem(value: l, child: Text(l)))
-                            .toList(),
-                        onChanged: (v) => setState(() => _lugarVenta = v!),
+                        items: [
+                          ..._lugaresSugeridos.map((l) => DropdownMenuItem(
+                                value: l,
+                                child: Text(l),
+                              )),
+                          const DropdownMenuItem(
+                            value: '__nuevo__',
+                            child: Row(children: [
+                              Icon(Icons.add_circle_outline,
+                                  size: 18, color: AppColors.primary),
+                              SizedBox(width: 6),
+                              Text('Agregar lugar nuevo…',
+                                  style: TextStyle(
+                                      color: AppColors.primary,
+                                      fontStyle: FontStyle.italic)),
+                            ]),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          if (v == '__nuevo__') {
+                            _agregarLugarNuevo();
+                          } else {
+                            setState(() => _lugarCtrl.text = v);
+                          }
+                        },
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty || v == '__nuevo__')
+                                ? 'Requerido'
+                                : null,
                       ),
                       const SizedBox(height: 16),
 

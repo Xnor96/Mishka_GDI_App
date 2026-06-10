@@ -105,10 +105,11 @@ class _ControlDiarioFormScreenState
     final confirm  = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Generar desde ventas'),
+        title: const Text('Generar corte del día'),
         content: Text(
-            'Se generará automáticamente el control del día '
-            '${_dateFmt.format(_fecha)} a partir de las ventas registradas.'),
+            'Se sumarán todas las ventas registradas el día '
+            '${_dateFmt.format(_fecha)} y se creará un movimiento '
+            'de "corte de ventas" en Control Diario.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -127,7 +128,7 @@ class _ControlDiarioFormScreenState
     if (!mounted) return;
     if (ok) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Control generado desde ventas'),
+        content: Text('Corte del día generado'),
         backgroundColor: AppColors.stockOk,
       ));
       context.pop();
@@ -154,7 +155,7 @@ class _ControlDiarioFormScreenState
           TextButton.icon(
             onPressed: guardando ? null : _generarDesdeVentas,
             icon: const Icon(Icons.auto_fix_high, color: Colors.white70, size: 18),
-            label: const Text('Desde ventas',
+            label: const Text('Corte del día',
                 style: TextStyle(color: Colors.white70, fontSize: 13)),
           ),
         ],

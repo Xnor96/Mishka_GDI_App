@@ -109,14 +109,14 @@ class _ProductoFormScreenState extends ConsumerState<ProductoFormScreen> {
   Future<void> _eliminar() async {
     final confirma = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Eliminar producto'),
         content: Text('¿Eliminar "${widget.producto!.nombre}"?\nEsta acción no se puede deshacer.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(dialogCtx, false), child: const Text('Cancelar')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.stockCero),
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(dialogCtx, true),
             child: const Text('Eliminar'),
           ),
         ],

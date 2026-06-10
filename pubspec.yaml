@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Delegates de localización (es_MX) para DatePicker y otros widgets Material
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.8
 
   # HTTP client con interceptores
@@ -23,8 +26,8 @@ dependencies:
   # Navegación declarativa
   go_router: ^14.6.2
 
-  # Formateo de fechas y moneda
-  intl: ^0.19.0
+  # Formateo de fechas y moneda (pin de flutter_localizations)
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:

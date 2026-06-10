@@ -209,18 +209,19 @@ class _ProductosScreenState extends ConsumerState<ProductosScreen> {
   Widget _buildLista(List<Producto> productos) => RefreshIndicator(
     onRefresh: () => ref.read(productosProvider.notifier).cargar(),
     child: ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
       itemCount: productos.length,
       separatorBuilder: (_, __) => const SizedBox(height: 4),
       itemBuilder: (_, i) => _ProductoCard(
         producto: productos[i],
         onTap: () => _irADetalle(productos[i]),
+        onDelete: () => _confirmarEliminarProducto(productos[i]),
       ),
     ),
   );
 
   Widget _buildTabla(List<Producto> productos) => SingleChildScrollView(
-    padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
     child: Card(
       child: DataTable(
         headingRowColor: WidgetStateProperty.all(AppColors.surfaceVariant),
@@ -231,6 +232,7 @@ class _ProductosScreenState extends ConsumerState<ProductosScreen> {
           DataColumn(label: Text('Categoría', style: TextStyle(fontWeight: FontWeight.w700))),
           DataColumn(label: Text('Precio',    style: TextStyle(fontWeight: FontWeight.w700))),
           DataColumn(label: Text('Stock',     style: TextStyle(fontWeight: FontWeight.w700))),
+          DataColumn(label: Text('',          style: TextStyle(fontWeight: FontWeight.w700))),
         ],
         rows: productos.map((p) => DataRow(
           onSelectChanged: (_) => _irADetalle(p),
@@ -240,11 +242,62 @@ class _ProductosScreenState extends ConsumerState<ProductosScreen> {
             DataCell(Text(p.categoriaNombre)),
             DataCell(Text('\$${p.precioUnitario.toStringAsFixed(2)}')),
             DataCell(_StockBadge(stock: p.stockActual)),
+            // Solo productos sin stock muestran botón eliminar (descontinuar)
+            DataCell(p.stockActual == 0
+                ? IconButton(
+                    tooltip: 'Eliminar (sin stock — descontinuar)',
+                    icon: const Icon(Icons.delete_outline,
+                        size: 20, color: AppColors.stockCero),
+                    onPressed: () => _confirmarEliminarProducto(p),
+                  )
+                : const SizedBox.shrink()),
           ],
         )).toList(),
       ),
     ),
   );
+
+  // ── Confirmar eliminación directa desde el listado ────────────────────────
+  Future<void> _confirmarEliminarProducto(Producto p) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Eliminar producto'),
+        content: Text(
+            '¿Eliminar "${p.nombre}" (${p.codigo})?\n'
+            'Solo se eliminan productos sin stock que ya no se van a surtir.\n'
+            'Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.stockCero),
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final exito =
+        await ref.read(productosProvider.notifier).eliminar(p.id);
+    if (!mounted) return;
+    if (exito) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Producto eliminado'),
+        backgroundColor: AppColors.stockOk,
+      ));
+    } else {
+      final err = ref.read(productosProvider).error;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(err ?? 'No se pudo eliminar'),
+        backgroundColor: AppColors.stockCero,
+      ));
+      ref.read(productosProvider.notifier).limpiarError();
+    }
+  }
 }
 
 // ── Card de producto ──────────────────────────────────────────────────────────
@@ -252,7 +305,8 @@ class _ProductosScreenState extends ConsumerState<ProductosScreen> {
 class _ProductoCard extends StatelessWidget {
   final Producto    producto;
   final VoidCallback onTap;
-  const _ProductoCard({required this.producto, required this.onTap});
+  final VoidCallback? onDelete; // solo si stock == 0
+  const _ProductoCard({required this.producto, required this.onTap, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -295,6 +349,16 @@ class _ProductoCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 _StockBadge(stock: p.stockActual),
               ]),
+              // Solo productos sin stock muestran botón eliminar
+              if (p.stockActual == 0 && onDelete != null) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: 'Eliminar (sin stock)',
+                  icon: const Icon(Icons.delete_outline,
+                      size: 20, color: AppColors.stockCero),
+                  onPressed: onDelete,
+                ),
+              ],
             ],
           ),
         ),
