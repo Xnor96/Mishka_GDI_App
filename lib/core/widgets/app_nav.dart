@@ -18,13 +18,18 @@ class AppNav extends StatelessWidget {
   });
 
   static const _items = [
-    _NavItem(Icons.dashboard_outlined,     'Dashboard',      '/dashboard'),
-    _NavItem(Icons.inventory_2_outlined,   'Productos',      '/productos'),
-    _NavItem(Icons.arrow_downward_rounded, 'Entradas',       '/entradas'),
-    _NavItem(Icons.arrow_upward_rounded,   'Ventas',         '/salidas'),
-    _NavItem(Icons.bar_chart_outlined,     'Control Diario', '/control-diario'),
-    _NavItem(Icons.calendar_month_outlined,'Resumen Mensual','/resumen-mensual'),
-    _NavItem(Icons.analytics_outlined,     'Reportes',       '/reportes'),
+    _NavItem(Icons.dashboard_outlined,        'Dashboard',          '/dashboard'),
+    _NavItem(Icons.inventory_2_outlined,      'Productos',          '/productos'),
+    _NavItem(Icons.arrow_downward_rounded,    'Entradas',           '/entradas'),
+    // Ventas se divide en dos ítems: la acción primaria (nueva venta, abre el
+    // form) y la consulta (historial, abre la lista).
+    _NavItem(Icons.add_shopping_cart_outlined, 'Nueva venta',       '/salidas/nueva',
+             pushMode: true, exactMatch: true),
+    _NavItem(Icons.receipt_long_outlined,     'Historial de ventas','/salidas',
+             exactMatch: true),
+    _NavItem(Icons.bar_chart_outlined,        'Control Diario',    '/control-diario'),
+    _NavItem(Icons.calendar_month_outlined,   'Resumen Mensual',   '/resumen-mensual'),
+    _NavItem(Icons.analytics_outlined,        'Reportes',          '/reportes'),
   ];
 
   @override
@@ -87,10 +92,13 @@ class AppNav extends StatelessWidget {
   }
 
   Widget _buildTile(BuildContext context, _NavItem item) {
-    // Consideramos activo si la ruta actual empieza con la ruta del ítem
-    // (ej: /productos/nuevo también resalta "Productos")
-    final isActive = currentRoute == item.route ||
-        (item.route != '/dashboard' && currentRoute.startsWith(item.route));
+    // Consideramos activo según el modo: exacto o startsWith.
+    // Ejemplo exactMatch=false: /productos/nuevo resalta "Productos".
+    // Ejemplo exactMatch=true:  /salidas/nueva NO resalta "Historial de ventas".
+    final isActive = item.exactMatch
+        ? currentRoute == item.route
+        : (currentRoute == item.route ||
+            (item.route != '/dashboard' && currentRoute.startsWith(item.route)));
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -117,7 +125,13 @@ class AppNav extends StatelessWidget {
           if (Navigator.of(context).canPop()) {
             Navigator.of(context).pop();
           }
-          if (!isActive) context.go(item.route);
+          if (item.pushMode) {
+            // Abre encima de la pantalla actual (ej. form de nueva venta)
+            context.push(item.route);
+          } else if (!isActive) {
+            // Reemplaza la ruta actual (navegación normal)
+            context.go(item.route);
+          }
         },
         dense: true,
       ),
@@ -129,7 +143,16 @@ class _NavItem {
   final IconData icon;
   final String   label;
   final String   route;
-  const _NavItem(this.icon, this.label, this.route);
+  /// true = usar `context.push` (apila encima, para pantallas tipo form).
+  /// false (default) = usar `context.go` (reemplaza la ruta actual).
+  final bool     pushMode;
+  /// true = ítem activo solo si currentRoute == route (match exacto).
+  /// false (default) = activo también cuando currentRoute empieza con route.
+  final bool     exactMatch;
+  const _NavItem(this.icon, this.label, this.route, {
+    this.pushMode   = false,
+    this.exactMatch = false,
+  });
 }
 
 // ── Widget de layout completo (sidebar + contenido) ───────────────────────────

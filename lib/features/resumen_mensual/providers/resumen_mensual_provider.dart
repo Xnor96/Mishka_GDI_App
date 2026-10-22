@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/network/api_client.dart';
+import '../../../core/database/dao/resumen_mensual_dao.dart';
 import '../models/resumen_mensual_models.dart';
 
 class ResumenMensualState {
@@ -9,7 +9,7 @@ class ResumenMensualState {
   final bool            generando;
 
   const ResumenMensualState({
-    this.actual    = null,
+    this.actual,
     this.isLoading = false,
     this.error,
     this.generando = false,
@@ -20,7 +20,7 @@ class ResumenMensualState {
     bool?           isLoading,
     String?         error,
     bool?           generando,
-    bool            clearError = false,
+    bool            clearError  = false,
     bool            clearActual = false,
   }) => ResumenMensualState(
     actual:    clearActual ? null : (actual ?? this.actual),
@@ -32,29 +32,31 @@ class ResumenMensualState {
 
 class ResumenMensualNotifier extends StateNotifier<ResumenMensualState> {
   ResumenMensualNotifier() : super(const ResumenMensualState());
+  final _dao = ResumenMensualDao();
 
   Future<void> cargarActual() async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final res  = await ApiClient.instance.get('/api/resumen-mensual/actual');
-      final data = res.data['data'] as Map<String, dynamic>;
+      final row = await _dao.actual();
       state = state.copyWith(
-          actual: ResumenMensual.fromJson(data), isLoading: false);
+        actual: row == null ? null : ResumenMensual.fromJson(row),
+        clearActual: row == null,
+        isLoading: false,
+      );
     } catch (e) {
-      // 404 = todavía no hay resumen del mes → no es error grave
-      state = state.copyWith(
-          isLoading: false, clearActual: true, clearError: true);
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
 
   Future<void> cargarPorMes(int mes, int anio) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      final res  = await ApiClient.instance
-          .get('/api/resumen-mensual/$mes/$anio');
-      final data = res.data['data'] as Map<String, dynamic>;
+      final row = await _dao.porMesAnio(mes, anio);
       state = state.copyWith(
-          actual: ResumenMensual.fromJson(data), isLoading: false);
+        actual: row == null ? null : ResumenMensual.fromJson(row),
+        clearActual: row == null,
+        isLoading: false,
+      );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
@@ -63,11 +65,11 @@ class ResumenMensualNotifier extends StateNotifier<ResumenMensualState> {
   Future<bool> generar(Map<String, dynamic> body) async {
     state = state.copyWith(generando: true, clearError: true);
     try {
-      final res  = await ApiClient.instance
-          .post('/api/resumen-mensual/generar', data: body);
-      final data = res.data['data'] as Map<String, dynamic>;
+      final row = await _dao.generar(body);
       state = state.copyWith(
-          generando: false, actual: ResumenMensual.fromJson(data));
+        generando: false,
+        actual: ResumenMensual.fromJson(row),
+      );
       return true;
     } catch (e) {
       state = state.copyWith(generando: false, error: e.toString());

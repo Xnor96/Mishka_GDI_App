@@ -1,17 +1,6 @@
 class AppConstants {
-  // ── API ──────────────────────────────────────────────────────────
-  // Inyectable en build/run con: --dart-define=API_BASE_URL=http://IP:PUERTO
-  // Si no se pasa, usa localhost (sirve para emulador iOS / escritorio).
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://localhost:8080',
-  );
-  static const Duration connectTimeout = Duration(seconds: 10);
-  static const Duration receiveTimeout = Duration(seconds: 15);
-
   // ── Storage keys ─────────────────────────────────────────────────
-  static const String keyAccessToken    = 'access_token';
-  static const String keyRefreshToken   = 'refresh_token';
+  // Sesión local (single-device, sin JWT).
   static const String keyUsername       = 'username';
   static const String keyRol            = 'rol';
   // Historial de "lugares de venta" tipeados por el admin (autocomplete)

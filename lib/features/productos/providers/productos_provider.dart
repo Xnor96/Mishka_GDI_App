@@ -1,26 +1,26 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/network/api_client.dart';
+import '../../../core/database/dao/producto_dao.dart';
 import '../models/producto_models.dart';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 class ProductosState {
-  final List<Producto> todos;          // lista completa (sin filtrar)
-  final List<Producto> filtrados;      // lista visible tras búsqueda/filtro
+  final List<Producto> todos;
+  final List<Producto> filtrados;
   final bool   isLoading;
   final String? error;
-  final int?   categoriaFiltro;       // null = todas
+  final int?   categoriaFiltro;
   final String  busqueda;
-  final bool   hasBuscado;            // true cuando el usuario inició una búsqueda/carga
+  final bool   hasBuscado;
 
   const ProductosState({
-    this.todos        = const [],
-    this.filtrados    = const [],
-    this.isLoading    = false,
+    this.todos      = const [],
+    this.filtrados  = const [],
+    this.isLoading  = false,
     this.error,
     this.categoriaFiltro,
-    this.busqueda     = '',
-    this.hasBuscado   = false,
+    this.busqueda   = '',
+    this.hasBuscado = false,
   });
 
   ProductosState copyWith({
@@ -44,19 +44,17 @@ class ProductosState {
     );
 }
 
-// ── Notifier ──────────────────────────────────────────────────────────────────
+// ── Notifier (SQLite local) ───────────────────────────────────────────────────
 
 class ProductosNotifier extends StateNotifier<ProductosState> {
   ProductosNotifier() : super(const ProductosState());
+  final _dao = ProductoDao();
 
-  // ── Cargar todos ────────────────────────────────────────────────────────────
   Future<void> cargar() async {
     state = state.copyWith(isLoading: true, error: null, hasBuscado: true);
     try {
-      final res = await ApiClient.instance.get('/api/productos');
-      final list = (res.data['data'] as List)
-          .map((j) => Producto.fromJson(j as Map<String, dynamic>))
-          .toList();
+      final rows = await _dao.listar();
+      final list = rows.map((r) => Producto.fromJson(r)).toList();
       state = state.copyWith(todos: list, isLoading: false);
       _aplicarFiltros();
     } catch (e) {
@@ -64,20 +62,12 @@ class ProductosNotifier extends StateNotifier<ProductosState> {
     }
   }
 
-  // ── Buscar (servidor) ───────────────────────────────────────────────────────
   Future<void> buscar(String q) async {
     state = state.copyWith(busqueda: q, hasBuscado: true);
-    if (q.isEmpty) {
-      _aplicarFiltros();
-      return;
-    }
+    if (q.isEmpty) { _aplicarFiltros(); return; }
     try {
-      final res = await ApiClient.instance
-          .get('/api/productos/buscar', queryParameters: {'q': q});
-      final list = (res.data['data'] as List)
-          .map((j) => Producto.fromJson(j as Map<String, dynamic>))
-          .toList();
-      // Aplica también filtro de categoría local sobre resultados
+      final rows = await _dao.buscar(q);
+      final list = rows.map((r) => Producto.fromJson(r)).toList();
       final filtrado = state.categoriaFiltro == null
           ? list
           : list.where((p) => p.idCategoria == state.categoriaFiltro).toList();
@@ -87,7 +77,6 @@ class ProductosNotifier extends StateNotifier<ProductosState> {
     }
   }
 
-  // ── Filtrar categoría (local) ───────────────────────────────────────────────
   void filtrarCategoria(int? idCategoria) {
     if (idCategoria == null) {
       state = state.copyWith(clearCategoria: true);
@@ -97,10 +86,9 @@ class ProductosNotifier extends StateNotifier<ProductosState> {
     _aplicarFiltros();
   }
 
-  // ── Crear ───────────────────────────────────────────────────────────────────
   Future<bool> crear(Map<String, dynamic> body) async {
     try {
-      await ApiClient.instance.post('/api/productos', data: body);
+      await _dao.crear(body);
       await cargar();
       return true;
     } catch (e) {
@@ -109,10 +97,9 @@ class ProductosNotifier extends StateNotifier<ProductosState> {
     }
   }
 
-  // ── Actualizar ──────────────────────────────────────────────────────────────
   Future<bool> actualizar(int id, Map<String, dynamic> body) async {
     try {
-      await ApiClient.instance.put('/api/productos/$id', data: body);
+      await _dao.actualizar(id, body);
       await cargar();
       return true;
     } catch (e) {
@@ -121,10 +108,9 @@ class ProductosNotifier extends StateNotifier<ProductosState> {
     }
   }
 
-  // ── Eliminar ────────────────────────────────────────────────────────────────
   Future<bool> eliminar(int id) async {
     try {
-      await ApiClient.instance.delete('/api/productos/$id');
+      await _dao.eliminar(id);
       await cargar();
       return true;
     } catch (e) {
@@ -133,7 +119,6 @@ class ProductosNotifier extends StateNotifier<ProductosState> {
     }
   }
 
-  // ── Privado: aplica filtros locales ─────────────────────────────────────────
   void _aplicarFiltros() {
     var lista = state.todos;
     if (state.categoriaFiltro != null) {
@@ -142,13 +127,9 @@ class ProductosNotifier extends StateNotifier<ProductosState> {
     state = state.copyWith(filtrados: lista);
   }
 
-  /// Regresa al estado inicial (pantalla de búsqueda vacía).
   void resetear() => state = const ProductosState();
-
   void limpiarError() => state = state.copyWith(error: null);
 }
-
-// ── Provider ──────────────────────────────────────────────────────────────────
 
 final productosProvider =
     StateNotifierProvider<ProductosNotifier, ProductosState>(

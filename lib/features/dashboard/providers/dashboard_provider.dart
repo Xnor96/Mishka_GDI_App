@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:dio/dio.dart';
-import '../../../core/network/api_client.dart';
+import '../../../core/database/dao/dashboard_dao.dart';
+import '../../../core/database/dao/resumen_mensual_dao.dart';
 import '../models/dashboard_models.dart';
 
 // ── Estado ────────────────────────────────────────────────────────
@@ -35,11 +35,12 @@ class DashboardState {
     double?                  totalEntradaHoy,
     double?                  totalSalidaHoy,
     List<ValoracionCategoria>? valoracion,
+    bool                     clearResumen = false,
   }) => DashboardState(
     isLoading:       isLoading       ?? this.isLoading,
     error:           error,
     alertas:         alertas         ?? this.alertas,
-    resumenActual:   resumenActual   ?? this.resumenActual,
+    resumenActual:   clearResumen ? null : (resumenActual ?? this.resumenActual),
     controlHoy:      controlHoy      ?? this.controlHoy,
     totalEntradaHoy: totalEntradaHoy ?? this.totalEntradaHoy,
     totalSalidaHoy:  totalSalidaHoy  ?? this.totalSalidaHoy,
@@ -47,47 +48,37 @@ class DashboardState {
   );
 }
 
-// ── Notifier ──────────────────────────────────────────────────────
+// ── Notifier (SQLite local) ───────────────────────────────────────
 class DashboardNotifier extends StateNotifier<DashboardState> {
   DashboardNotifier() : super(const DashboardState());
-
-  final _dio = ApiClient().dio;
+  final _dao        = DashboardDao();
+  final _resumenDao = ResumenMensualDao();
 
   Future<void> cargar() async {
     state = state.copyWith(isLoading: true);
     try {
-      // Lanzar todas las peticiones en paralelo
       final results = await Future.wait([
-        _dio.get('/api/alertas/stock-bajo'),
-        _dio.get('/api/resumen-mensual/actual'),
-        _dio.get('/api/control-diario/hoy'),
-        _dio.get('/api/reportes/valoracion-inventario'),
+        _dao.alertasStockBajo(),
+        _resumenDao.actual(),
+        _dao.controlHoy(),
+        _dao.valoracionPorCategoria(),
       ]);
 
-      // Alertas
-      final alertasData = results[0].data['stock_bajo'] as List? ?? [];
-      final alertas = alertasData
+      final alertas = (results[0] as List<Map<String, dynamic>>)
           .map((e) => AlertaStockBajo.fromJson(e))
           .toList();
 
-      // Resumen mensual actual
-      ResumenMensual? resumen;
-      final resumenData = results[1].data['data'];
-      if (resumenData != null) {
-        resumen = ResumenMensual.fromJson(resumenData);
-      }
+      final resumenRow = results[1] as Map<String, dynamic>?;
+      final resumen = resumenRow == null ? null : ResumenMensual.fromJson(resumenRow);
 
-      // Control de hoy
-      final controlData = results[2].data['data'] as List? ?? [];
-      final controles = controlData
-          .map((e) => ControlDiario.fromJson(e))
+      final control = results[2] as Map<String, dynamic>;
+      final controles = (control['data'] as List)
+          .map((e) => ControlDiario.fromJson(e as Map<String, dynamic>))
           .toList();
-      final totalEntrada = (results[2].data['total_entrada'] ?? 0).toDouble();
-      final totalSalida  = (results[2].data['total_salida']  ?? 0).toDouble();
+      final totalEntrada = (control['total_entrada'] as num).toDouble();
+      final totalSalida  = (control['total_salida']  as num).toDouble();
 
-      // Valoración
-      final valorData = results[3].data['data'] as List? ?? [];
-      final valoracion = valorData
+      final valoracion = (results[3] as List<Map<String, dynamic>>)
           .map((e) => ValoracionCategoria.fromJson(e))
           .toList();
 
@@ -95,24 +86,21 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
         isLoading:       false,
         alertas:         alertas,
         resumenActual:   resumen,
+        clearResumen:    resumen == null,
         controlHoy:      controles,
         totalEntradaHoy: totalEntrada,
         totalSalidaHoy:  totalSalida,
         valoracion:      valoracion,
       );
-    } on DioException catch (e) {
-      final msg = e.response?.data?['error'] ?? 'Error al cargar el dashboard';
-      state = state.copyWith(isLoading: false, error: msg);
-    } catch (_) {
+    } catch (e) {
       state = state.copyWith(
-          isLoading: false, error: 'Error inesperado al cargar el dashboard');
+          isLoading: false, error: 'Error al cargar el dashboard: $e');
     }
   }
 
   void limpiarError() => state = state.copyWith(error: null);
 }
 
-// ── Provider ──────────────────────────────────────────────────────
 final dashboardProvider =
     StateNotifierProvider<DashboardNotifier, DashboardState>(
   (ref) => DashboardNotifier(),

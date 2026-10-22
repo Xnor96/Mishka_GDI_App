@@ -14,11 +14,14 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
 
-  # HTTP client con interceptores
-  dio: ^5.7.0
+  # Base de datos local SQLite
+  sqflite: ^2.4.1
+  # Utilidades de rutas del sistema de archivos
+  path: ^1.9.0
+  path_provider: ^2.1.5
 
-  # Almacenamiento local del token JWT
-  shared_preferences: ^2.3.2
+  # Hash de passwords para login local (bcrypt)
+  bcrypt: ^1.1.3
 
   # Estado de la aplicación
   flutter_riverpod: ^2.5.1
@@ -26,8 +29,15 @@ dependencies:
   # Navegación declarativa
   go_router: ^14.6.2
 
+  # Preferencias locales (sesión "logueado", filtros, últimos valores)
+  shared_preferences: ^2.3.2
+
   # Formateo de fechas y moneda (pin de flutter_localizations)
   intl: ^0.20.2
+
+  # Export a Excel + compartir a Drive/Correo/USB (backup + reportes)
+  excel: ^4.0.6
+  share_plus: ^10.1.2
 
 dev_dependencies:
   flutter_test:
@@ -39,3 +49,8 @@ flutter:
 
   assets:
     - assets/images/mishka.jpeg
+    # Seed database (opcional). Se regenera con:
+    #   python3 scripts/migrate_postgres_to_sqlite.py --pg-url "..." --output Mishka-GDI-App/assets/db/mishka_seed.db
+    # Si no existe, la app crea la BD desde ddl.sql + un admin default.
+    - assets/db/
+    - assets/db/ddl.sql

@@ -1,10 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- App 100% offline (SQLite local): INTERNET solo se conserva por
+         compatibilidad con debug/hot-reload del Flutter tool. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="mishkapp"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true">
+        android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
 import '../router/app_router.dart';
+import '../services/backup_service.dart';
+import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/dashboard/providers/dashboard_provider.dart';
@@ -132,6 +134,16 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (loc == AppRouter.reportes) {
       return [
         IconButton(
+          icon: const Icon(Icons.backup_outlined, color: Colors.white),
+          tooltip: 'Backup ahora (compartir .db)',
+          onPressed: _backupAhora,
+        ),
+        IconButton(
+          icon: const Icon(Icons.download_outlined, color: Colors.white),
+          tooltip: 'Exportar todo a Excel',
+          onPressed: _exportarExcel,
+        ),
+        IconButton(
           icon: const Icon(Icons.refresh, color: Colors.white),
           tooltip: 'Recargar reporte',
           onPressed: () {
@@ -144,6 +156,41 @@ class _AppShellState extends ConsumerState<AppShell> {
       ];
     }
     return [];
+  }
+
+  Future<void> _exportarExcel() async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(
+      duration: Duration(seconds: 2),
+      content: Text('Generando Excel...'),
+    ));
+    try {
+      await ExportService().compartirExcel();
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text('No se pudo generar el Excel: $e'),
+        backgroundColor: AppColors.stockCero,
+      ));
+    }
+  }
+
+  Future<void> _backupAhora() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await BackupService().compartirUltimoBackup();
+      if (!mounted) return;
+      messenger.showSnackBar(const SnackBar(
+        duration: Duration(seconds: 2),
+        content: Text('Backup listo para compartir'),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text('No se pudo hacer backup: $e'),
+        backgroundColor: AppColors.stockCero,
+      ));
+    }
   }
 
   // ── FAB según ruta ────────────────────────────────────────────────────────

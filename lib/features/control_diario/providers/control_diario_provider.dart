@@ -1,8 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/network/api_client.dart';
+import '../../../core/database/dao/control_diario_dao.dart';
 import '../models/control_diario_models.dart';
-
-// ── Filtros disponibles ────────────────────────────────────────────────────
 
 enum ControlFiltro { todos, hoy, verbena }
 
@@ -51,34 +49,32 @@ class ControlDiarioState {
   );
 }
 
-// ── Notifier ──────────────────────────────────────────────────────────────────
+// ── Notifier (SQLite local) ───────────────────────────────────────────────────
 
 class ControlDiarioNotifier extends StateNotifier<ControlDiarioState> {
   ControlDiarioNotifier() : super(const ControlDiarioState());
+  final _dao = ControlDiarioDao();
 
   Future<void> cargar([ControlFiltro? filtro]) async {
     final f = filtro ?? state.filtro;
     state = state.copyWith(isLoading: true, clearError: true, filtro: f);
-
-    final endpoint = switch (f) {
-      ControlFiltro.hoy     => '/api/control-diario/hoy',
-      ControlFiltro.verbena => '/api/control-diario/verbena',
-      ControlFiltro.todos   => '/api/control-diario',
-    };
-
     try {
-      final res  = await ApiClient.instance.get(endpoint);
-      final data = res.data as Map<String, dynamic>;
-      final list = (data['data'] as List)
-          .map((j) => ControlDiario.fromJson(j as Map<String, dynamic>))
-          .toList();
+      final rows = await _dao.listar(
+        soloHoy:     f == ControlFiltro.hoy,
+        soloVerbena: f == ControlFiltro.verbena,
+      );
+      final list = rows.map((r) => ControlDiario.fromJson(r)).toList();
       list.sort((a, b) => b.fecha.compareTo(a.fecha));
 
+      final tot = await _dao.totales(
+        soloHoy:     f == ControlFiltro.hoy,
+        soloVerbena: f == ControlFiltro.verbena,
+      );
       state = state.copyWith(
         registros:    list,
-        totalEntrada: (data['total_entrada'] as num? ?? 0).toDouble(),
-        totalSalida:  (data['total_salida']  as num? ?? 0).toDouble(),
-        balance:      (data['balance']        as num? ?? 0).toDouble(),
+        totalEntrada: tot['te']!,
+        totalSalida:  tot['ts']!,
+        balance:      tot['balance']!,
         isLoading:    false,
       );
     } catch (e) {
@@ -89,7 +85,7 @@ class ControlDiarioNotifier extends StateNotifier<ControlDiarioState> {
   Future<bool> registrar(Map<String, dynamic> body) async {
     state = state.copyWith(guardando: true, clearError: true);
     try {
-      await ApiClient.instance.post('/api/control-diario', data: body);
+      await _dao.registrar(body);
       state = state.copyWith(guardando: false);
       await cargar();
       return true;
@@ -102,9 +98,12 @@ class ControlDiarioNotifier extends StateNotifier<ControlDiarioState> {
   Future<bool> generarDesdeVentas(String fecha) async {
     state = state.copyWith(guardando: true, clearError: true);
     try {
-      await ApiClient.instance
-          .post('/api/control-diario/generar/$fecha', data: {});
+      final id = await _dao.generarDesdeVentas(fecha);
       state = state.copyWith(guardando: false);
+      if (id == null) {
+        state = state.copyWith(error: 'No hay ventas registradas ese día');
+        return false;
+      }
       await cargar();
       return true;
     } catch (e) {
@@ -115,7 +114,7 @@ class ControlDiarioNotifier extends StateNotifier<ControlDiarioState> {
 
   Future<bool> eliminar(int id) async {
     try {
-      await ApiClient.instance.delete('/api/control-diario/$id');
+      await _dao.eliminar(id);
       final nuevos = state.registros.where((c) => c.id != id).toList();
       final te = nuevos.fold<double>(0, (s, c) => s + c.montoEntrada);
       final ts = nuevos.fold<double>(0, (s, c) => s + c.montoSalida);
@@ -133,11 +132,8 @@ class ControlDiarioNotifier extends StateNotifier<ControlDiarioState> {
   }
 
   void cambiarFiltro(ControlFiltro f) => cargar(f);
-
   void limpiarError() => state = state.copyWith(clearError: true);
 }
-
-// ── Provider ──────────────────────────────────────────────────────────────────
 
 final controlDiarioProvider =
     StateNotifierProvider<ControlDiarioNotifier, ControlDiarioState>(

@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/app_constants.dart';
-import '../../../core/network/api_client.dart';
+import '../../../core/database/dao/producto_dao.dart';
 import '../providers/entradas_provider.dart';
 
 /// P6 — Registrar Entrada. Pantalla completa con su propio Scaffold (fuera del shell).
@@ -58,10 +58,9 @@ class _EntradaFormScreenState extends ConsumerState<EntradaFormScreen> {
     }
     setState(() => _buscando = true);
     try {
-      final res = await ApiClient.instance
-          .get('/api/productos/buscar', queryParameters: {'q': q.trim()});
-      final lista = (res.data['data'] as List)
-          .map((j) => _ProductoLite.fromJson(j as Map<String, dynamic>))
+      final rows = await ProductoDao().buscar(q.trim());
+      final lista = rows
+          .map((j) => _ProductoLite.fromJson(j))
           .toList();
       if (mounted) setState(() { _resultados = lista; _buscando = false; });
     } catch (_) {

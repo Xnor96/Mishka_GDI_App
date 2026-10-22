@@ -31,9 +31,10 @@ class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: login,
     redirect: (context, state) async {
+      // Sin JWT: "logueado" = tener un username persistido en SharedPreferences.
       final prefs      = await SharedPreferences.getInstance();
-      final token      = prefs.getString(AppConstants.keyAccessToken) ?? '';
-      final isLoggedIn = token.isNotEmpty;
+      final username   = prefs.getString(AppConstants.keyUsername) ?? '';
+      final isLoggedIn = username.isNotEmpty;
       final loc        = state.matchedLocation;
 
       if (!isLoggedIn && loc != login) return login;

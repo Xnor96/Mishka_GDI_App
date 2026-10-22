@@ -9,7 +9,7 @@ import '../models/salida_models.dart';
 
 const _kPageSize = 20;
 
-/// P7 — Lista Ventas. Scaffold/AppBar/FAB los provee AppShell.
+/// P7 — Lista Ventas (multi-ítem). Scaffold/AppBar/FAB los provee AppShell.
 class SalidasScreen extends ConsumerStatefulWidget {
   const SalidasScreen({super.key});
 
@@ -33,7 +33,6 @@ class _SalidasScreenState extends ConsumerState<SalidasScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(salidasProvider.notifier).cargar();
     });
-    // Restaurar el último filtro de lugar persistido (si lo había)
     SharedPreferences.getInstance().then((p) {
       final saved = p.getString(AppConstants.keyFiltroLugar);
       if (saved != null && mounted) {
@@ -42,15 +41,17 @@ class _SalidasScreenState extends ConsumerState<SalidasScreen> {
     });
   }
 
-  // ── Confirmar anulación (desde tabla escritorio) ──────────────────────────
-  Future<void> _confirmarAnular(BuildContext context, Salida s) async {
+  // ── Confirmar anular venta ─────────────────────────────────────────────────
+  Future<void> _confirmarAnular(Venta v) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('Anular venta'),
         content: Text(
-            '¿Anular la venta de "${s.nombreProducto}"?\n'
-            'El stock del producto se revertirá automáticamente.'),
+            '¿Anular la venta del ${_dateFmt.format(v.fechaVenta)} '
+            '(${v.numLineas} ítem${v.numLineas == 1 ? '' : 's'}, '
+            'total ${_currency.format(v.total)})?\n\n'
+            'El stock de los productos vendidos se devolverá al inventario.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dialogCtx, false),
@@ -63,19 +64,22 @@ class _SalidasScreenState extends ConsumerState<SalidasScreen> {
       ),
     );
     if (ok == true) {
-      await ref.read(salidasProvider.notifier).eliminar(s.id);
+      await ref.read(salidasProvider.notifier).eliminar(v.id);
     }
   }
 
   // ── Filtrado ──────────────────────────────────────────────────────────────
-  List<Salida> _filtradas(List<Salida> todas) {
-    return todas.where((s) {
-      if (_filtroCat   != null && s.nombreCategoria != _filtroCat)   return false;
-      if (_filtroLugar != null && s.lugarVenta      != _filtroLugar) return false;
-      if (_desde != null && s.fechaSalida.isBefore(_desde!))         return false;
+  List<Venta> _filtradas(List<Venta> todas) {
+    return todas.where((v) {
+      if (_filtroLugar != null && v.lugarVenta != _filtroLugar) return false;
+      if (_filtroCat != null &&
+          !v.lineas.any((l) => l.nombreCategoria == _filtroCat)) {
+        return false;
+      }
+      if (_desde != null && v.fechaVenta.isBefore(_desde!)) return false;
       if (_hasta != null) {
         final fin = DateTime(_hasta!.year, _hasta!.month, _hasta!.day, 23, 59, 59);
-        if (s.fechaSalida.isAfter(fin)) return false;
+        if (v.fechaVenta.isAfter(fin)) return false;
       }
       return true;
     }).toList();
@@ -98,31 +102,31 @@ class _SalidasScreenState extends ConsumerState<SalidasScreen> {
 
   // ── Filtros de categoría / lugar ──────────────────────────────────────────
   Widget _buildFiltros(SalidasState state) {
-    final cats = state.salidas
-        .map((s) => s.nombreCategoria)
-        .toSet()
-        .toList()
-      ..sort();
+    final cats = <String>{
+      for (final v in state.ventas)
+        for (final l in v.lineas) l.nombreCategoria,
+    }..removeWhere((c) => c.isEmpty);
+    final catsList = cats.toList()..sort();
 
-    final lugares = state.salidas
-        .map((s) => s.lugarVenta)
+    final lugares = state.ventas
+        .map((v) => v.lugarVenta)
         .where((l) => l.isNotEmpty)
         .toSet()
         .toList()
       ..sort();
 
-    if (cats.isEmpty && lugares.isEmpty) return const SizedBox.shrink();
+    if (catsList.isEmpty && lugares.isEmpty) return const SizedBox.shrink();
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
-          if (cats.isNotEmpty) ...[
+          if (catsList.isNotEmpty) ...[
             _chip('Todas', null, 'cat'),
-            ...cats.map((c) => _chip(c, c, 'cat')),
+            ...catsList.map((c) => _chip(c, c, 'cat')),
           ],
-          if (cats.isNotEmpty && lugares.isNotEmpty) ...[
+          if (catsList.isNotEmpty && lugares.isNotEmpty) ...[
             const SizedBox(width: 12),
             Container(width: 1, height: 24, color: const Color(0xFFDDDDDD)),
             const SizedBox(width: 12),
@@ -149,7 +153,6 @@ class _SalidasScreenState extends ConsumerState<SalidasScreen> {
             else                { _filtroLugar = value; }
             _page = 0;
           });
-          // Persistir el filtro de lugar para que "Nueva venta" lo precargue
           if (group == 'lugar') {
             SharedPreferences.getInstance().then((p) {
               if (value == null) {
@@ -341,7 +344,7 @@ class _SalidasScreenState extends ConsumerState<SalidasScreen> {
           child: CircularProgressIndicator(color: AppColors.colSalidas));
     }
 
-    final filtradas  = _filtradas(state.salidas);
+    final filtradas  = _filtradas(state.ventas);
     final totalPages = (filtradas.length / _kPageSize).ceil().clamp(1, 9999);
     final pagina     = _page.clamp(0, totalPages - 1);
     final paginadas  = filtradas
@@ -364,23 +367,21 @@ class _SalidasScreenState extends ConsumerState<SalidasScreen> {
     }
 
     final totalVentas   = filtradas.fold<double>(0, (s, v) => s + v.total);
-    final totalUnidades = filtradas.fold<int>(0, (s, v) => s + v.cantidad);
-    final isDesktop     = MediaQuery.of(context).size.width > 800;
+    final totalPiezas   = filtradas.fold<int>(0, (s, v) => s + v.cantidadItems);
     final hayPaginas    = filtradas.length > _kPageSize;
 
     return Column(
       children: [
-        _buildResumen(totalVentas, totalUnidades, filtradas.length),
+        _buildResumen(totalVentas, totalPiezas, filtradas.length),
         if (hayPaginas) _buildPaginacion(pagina, totalPages, filtradas.length),
-        Expanded(
-            child: isDesktop ? _buildTabla(paginadas) : _buildLista(paginadas)),
+        Expanded(child: _buildLista(paginadas)),
         if (hayPaginas) _buildPaginacion(pagina, totalPages, filtradas.length),
       ],
     );
   }
 
   // ── Resumen rápido ────────────────────────────────────────────────────────
-  Widget _buildResumen(double total, int unidades, int registros) {
+  Widget _buildResumen(double total, int piezas, int registros) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -394,7 +395,7 @@ class _SalidasScreenState extends ConsumerState<SalidasScreen> {
         children: [
           _resItem('Ventas', '$registros', Icons.receipt_long_outlined),
           _divV(),
-          _resItem('Piezas', '$unidades', Icons.diamond_outlined),
+          _resItem('Piezas', '$piezas', Icons.diamond_outlined),
           _divV(),
           _resItem('Total', _currency.format(total), Icons.attach_money),
         ],
@@ -421,280 +422,146 @@ class _SalidasScreenState extends ConsumerState<SalidasScreen> {
       width: 1, height: 30,
       color: AppColors.colSalidas.withOpacity(0.2));
 
-  // ── Lista móvil ───────────────────────────────────────────────────────────
-  Widget _buildLista(List<Salida> salidas) {
+  // ── Lista ─────────────────────────────────────────────────────────────────
+  Widget _buildLista(List<Venta> ventas) {
     return RefreshIndicator(
       color: AppColors.colSalidas,
       onRefresh: () => ref.read(salidasProvider.notifier).cargar(),
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
-        itemCount: salidas.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 4),
-        itemBuilder: (_, i) => _SalidaCard(
-            salida: salidas[i],
-            dateFmt: _dateFmt,
-            currency: _currency,
-            onDelete: () => ref.read(salidasProvider.notifier).eliminar(salidas[i].id)),
-      ),
-    );
-  }
-
-  // ── Tabla escritorio ──────────────────────────────────────────────────────
-  Widget _buildTabla(List<Salida> salidas) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
-      child: Card(
-        child: DataTable(
-          headingRowColor:
-              WidgetStateProperty.all(AppColors.colSalidas.withOpacity(0.08)),
-          columnSpacing: 14,
-          columns: const [
-            DataColumn(label: Text('Fecha',    style: TextStyle(fontWeight: FontWeight.w700))),
-            DataColumn(label: Text('Producto', style: TextStyle(fontWeight: FontWeight.w700))),
-            DataColumn(label: Text('Cat.',     style: TextStyle(fontWeight: FontWeight.w700))),
-            DataColumn(label: Text('Cant.',    style: TextStyle(fontWeight: FontWeight.w700))),
-            DataColumn(label: Text('P.Venta',  style: TextStyle(fontWeight: FontWeight.w700))),
-            DataColumn(label: Text('Desc.',    style: TextStyle(fontWeight: FontWeight.w700))),
-            DataColumn(label: Text('Total',    style: TextStyle(fontWeight: FontWeight.w700))),
-            DataColumn(label: Text('Lugar',    style: TextStyle(fontWeight: FontWeight.w700))),
-            DataColumn(label: Text('Pago',     style: TextStyle(fontWeight: FontWeight.w700))),
-            DataColumn(label: Text('',         style: TextStyle(fontWeight: FontWeight.w700))),
-          ],
-          rows: salidas.map((s) => DataRow(cells: [
-            DataCell(Text(_dateFmt.format(s.fechaSalida),
-                style: const TextStyle(fontSize: 13))),
-            DataCell(Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(s.nombreProducto,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 13),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text(s.codigoProducto,
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.textSecondary)),
-              ],
-            )),
-            DataCell(Text(s.nombreCategoria,
-                style: const TextStyle(fontSize: 12))),
-            DataCell(Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.colSalidas.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text('−${s.cantidad}',
-                  style: const TextStyle(
-                      color: AppColors.colSalidas,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13)),
-            )),
-            DataCell(Text(_currency.format(s.precioVenta),
-                style: const TextStyle(fontSize: 13))),
-            DataCell(Text(
-              s.descuento > 0 ? _currency.format(s.descuento) : '—',
-              style: TextStyle(
-                  fontSize: 13,
-                  color: s.descuento > 0
-                      ? AppColors.stockBajo
-                      : AppColors.textHint),
-            )),
-            DataCell(Text(_currency.format(s.total),
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 13))),
-            DataCell(_LugarCell(lugar: s.lugarVenta)),
-            DataCell(_PagoBadge(tipo: s.tipoPago)),
-            DataCell(IconButton(
-              tooltip: 'Anular venta',
-              icon: const Icon(Icons.delete_outline,
-                  size: 20, color: AppColors.stockCero),
-              onPressed: () => _confirmarAnular(context, s),
-            )),
-          ])).toList(),
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 110),
+        itemCount: ventas.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 6),
+        itemBuilder: (_, i) => _VentaCard(
+          // Key estable por id de venta: evita que al borrar una venta
+          // expandida, la siguiente herede el estado "expandido".
+          key: ValueKey('venta-${ventas[i].id}'),
+          venta: ventas[i],
+          dateFmt: _dateFmt,
+          currency: _currency,
+          onDelete: () => _confirmarAnular(ventas[i]),
         ),
       ),
     );
   }
 }
 
-// ── Helpers de badges ─────────────────────────────────────────────────────────
+// ── Card de venta con expansión ──────────────────────────────────────────────
 
-class _LugarCell extends StatelessWidget {
-  final String lugar;
-  const _LugarCell({required this.lugar});
-
-  @override
-  Widget build(BuildContext context) {
-    final IconData icon;
-    switch (lugar) {
-      case 'ALL BAZAR': icon = Icons.store_outlined; break;
-      case 'PINKSTORE': icon = Icons.shopping_bag_outlined; break;
-      case 'PERSONAL':  icon = Icons.person_outline; break;
-      default:          icon = Icons.location_on_outlined;
-    }
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 13, color: AppColors.textSecondary),
-      const SizedBox(width: 3),
-      Flexible(
-        child: Text(lugar.isNotEmpty ? lugar : '—',
-            style: const TextStyle(fontSize: 12),
-            overflow: TextOverflow.ellipsis),
-      ),
-    ]);
-  }
-}
-
-class _PagoBadge extends StatelessWidget {
-  final String tipo;
-  const _PagoBadge({required this.tipo});
-
-  @override
-  Widget build(BuildContext context) {
-    final Color color;
-    switch (tipo) {
-      case 'EFECTIVO':      color = AppColors.stockOk; break;
-      case 'TRANSFERENCIA': color = AppColors.colProductos; break;
-      case 'CLIP':          color = const Color(0xFFF57C00); break;
-      default:              color = AppColors.textSecondary;
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Text(tipo.isNotEmpty ? tipo : '—',
-          style: TextStyle(
-              fontSize: 11, color: color, fontWeight: FontWeight.w600)),
-    );
-  }
-}
-
-// ── Card móvil ────────────────────────────────────────────────────────────────
-
-class _SalidaCard extends StatelessWidget {
-  final Salida       salida;
+class _VentaCard extends StatelessWidget {
+  final Venta        venta;
   final DateFormat   dateFmt;
   final NumberFormat currency;
   final VoidCallback onDelete;
 
-  const _SalidaCard(
-      {required this.salida,
-      required this.dateFmt,
-      required this.currency,
-      required this.onDelete});
+  const _VentaCard({
+    super.key,
+    required this.venta,
+    required this.dateFmt,
+    required this.currency,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final s = salida;
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.colSalidas.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.arrow_upward_rounded,
-                  color: AppColors.colSalidas, size: 22),
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        // Quitar los bordes grises que ExpansionTile pone por default
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          // Key estable para que el estado de expansión siga a la venta,
+          // no a la posición en la lista.
+          key: PageStorageKey('venta-expand-${venta.id}'),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          childrenPadding:
+              const EdgeInsets.fromLTRB(14, 0, 14, 10),
+          leading: Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.colSalidas.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            child: const Icon(Icons.receipt_long,
+                color: AppColors.colSalidas, size: 20),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Text(s.nombreProducto,
+                  Text(dateFmt.format(venta.fechaVenta),
                       style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Row(children: [
-                    Text(s.codigoProducto,
-                        style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textSecondary)),
-                    const SizedBox(width: 6),
-                    _catBadge(s.nombreCategoria),
-                  ]),
-                  const SizedBox(height: 3),
-                  Row(children: [
-                    _LugarCell(lugar: s.lugarVenta),
-                    const SizedBox(width: 8),
-                    _PagoBadge(tipo: s.tipoPago),
-                  ]),
-                  if (s.observaciones.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(s.observaciones,
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textHint),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                  const SizedBox(width: 8),
+                  _tag(venta.lugarVenta, AppColors.colControl),
+                  const SizedBox(width: 6),
+                  _tag(venta.tipoPago, _pagoColor(venta.tipoPago)),
                 ],
               ),
-            ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(currency.format(s.total),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                        color: AppColors.colSalidas)),
-                const SizedBox(height: 3),
-                if (s.descuento > 0)
-                  Text('−${currency.format(s.descuento)}',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.stockBajo)),
-                Container(
-                  margin: const EdgeInsets.only(top: 2),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.colSalidas.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text('−${s.cantidad}',
-                      style: const TextStyle(
-                          color: AppColors.colSalidas,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12)),
+              const SizedBox(height: 2),
+              Text(venta.resumenProductos,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textSecondary),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+                '${venta.numLineas} ítem${venta.numLineas == 1 ? '' : 's'} · '
+                '${venta.cantidadItems} pza${venta.cantidadItems == 1 ? '' : 's'}',
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textHint)),
+          ),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(currency.format(venta.total),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                      color: AppColors.colSalidas)),
+              const Icon(Icons.expand_more,
+                  size: 18, color: AppColors.textHint),
+            ],
+          ),
+          children: [
+            const Divider(height: 1),
+            const SizedBox(height: 6),
+            ...venta.lineas.map((l) => _buildLineaRow(l)),
+            const SizedBox(height: 6),
+            if (venta.observaciones.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.notes_outlined,
+                        size: 14, color: AppColors.textHint),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(venta.observaciones,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              fontStyle: FontStyle.italic)),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(dateFmt.format(s.fechaSalida),
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.textHint)),
-                const SizedBox(height: 4),
-                GestureDetector(
-                  onTap: () async {
-                    final ok = await showDialog<bool>(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('Eliminar venta'),
-                        content: Text(
-                            '¿Eliminar la venta de "${s.nombreProducto}"?\n'
-                            'El stock se revertirá automáticamente.'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancelar')),
-                          TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Eliminar',
-                                  style: TextStyle(color: Colors.red))),
-                        ],
-                      ),
-                    );
-                    if (ok == true) onDelete();
-                  },
-                  child: const Icon(Icons.delete_outline,
-                      size: 16, color: AppColors.textHint),
-                ),
-              ],
+              ),
+              const SizedBox(height: 6),
+            ],
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline,
+                    size: 18, color: AppColors.stockCero),
+                label: const Text('Anular venta',
+                    style: TextStyle(color: AppColors.stockCero)),
+              ),
             ),
           ],
         ),
@@ -702,17 +569,73 @@ class _SalidaCard extends StatelessWidget {
     );
   }
 
-  Widget _catBadge(String cat) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-        decoration: BoxDecoration(
-          color: AppColors.colSalidas.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(cat,
-            style: const TextStyle(
-                fontSize: 10,
-                color: AppColors.colSalidas,
-                fontWeight: FontWeight.w600)),
-      );
+  Widget _buildLineaRow(Salida l) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l.nombreProducto,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text('${l.codigoProducto} · ${l.nombreCategoria}',
+                    style: const TextStyle(
+                        fontSize: 10, color: AppColors.textHint)),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 44,
+            child: Text('x${l.cantidad}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w700,
+                    color: AppColors.colSalidas)),
+          ),
+          SizedBox(
+            width: 70,
+            child: Text('\$${l.precioVenta.toStringAsFixed(2)}',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.textSecondary)),
+          ),
+          SizedBox(
+            width: 80,
+            child: Text('\$${l.total.toStringAsFixed(2)}',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tag(String texto, Color color) {
+    if (texto.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(texto,
+          style: TextStyle(
+              fontSize: 10, color: color, fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Color _pagoColor(String tipo) {
+    switch (tipo) {
+      case 'EFECTIVO':      return AppColors.stockOk;
+      case 'TRANSFERENCIA': return AppColors.colProductos;
+      case 'CLIP':          return AppColors.colEntradas;
+      default:              return AppColors.textSecondary;
+    }
+  }
 }
